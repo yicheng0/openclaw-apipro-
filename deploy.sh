@@ -317,25 +317,30 @@ ensure_openclaw() {
 
 # --- 启动 Gateway ---
 run_node() {
-  export OPENCLAW_HOME="$OPENCLAW_DATA_DIR"
-
-  # 若已有旧进程则停掉
-  local pid_file="${OPENCLAW_DATA_DIR}/gateway.pid"
-  if [ -f "$pid_file" ]; then
-    local old_pid
-    old_pid=$(cat "$pid_file")
-    if kill -0 "$old_pid" 2>/dev/null; then
-      info "停止旧 Gateway 进程 (PID: $old_pid)..."
-      kill "$old_pid" 2>/dev/null || true
-      sleep 1
-    fi
-  fi
+  # 先用 openclaw 自带命令停掉所有旧实例
+  openclaw gateway stop 2>/dev/null || true
+  pkill -f "openclaw-gateway" 2>/dev/null || true
+  sleep 1
 
   info "正在启动 OpenClaw Gateway (端口 $OPENCLAW_PORT)..."
-  nohup openclaw gateway --port "$OPENCLAW_PORT" >> "${OPENCLAW_DATA_DIR}/gateway.log" 2>&1 &
-  echo $! > "$pid_file"
-  info "Gateway 已在后台启动，PID: $(cat "$pid_file")"
-  info "日志: ${OPENCLAW_DATA_DIR}/gateway.log"
+  # 用 HOME 显式传递，确保后台进程能找到 ~/.openclaw/openclaw.json
+  nohup bash -c "HOME=\"$HOME\" openclaw gateway --port \"$OPENCLAW_PORT\"" \
+    >> "${OPENCLAW_DATA_DIR}/gateway.log" 2>&1 &
+  local pid=$!
+  echo "$pid" > "${OPENCLAW_DATA_DIR}/gateway.pid"
+
+  # 等待 Gateway 真正启动（最多 10 秒）
+  local i=0
+  while [ $i -lt 10 ]; do
+    sleep 1
+    i=$((i+1))
+    if grep -q "listening on" "${OPENCLAW_DATA_DIR}/gateway.log" 2>/dev/null; then
+      info "Gateway 已启动，PID: $pid"
+      info "日志: ${OPENCLAW_DATA_DIR}/gateway.log"
+      return 0
+    fi
+  done
+  warn "Gateway 启动超时，请检查日志: ${OPENCLAW_DATA_DIR}/gateway.log"
 }
 
 # --- 主流程 ---
