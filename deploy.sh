@@ -392,27 +392,9 @@ main() {
   echo "  - 网关: http://127.0.0.1:$OPENCLAW_PORT"
   echo "  - 配置: $OPENCLAW_DATA_DIR/openclaw.json"
   echo ""
-
-  # 可选：立即配对（支持 curl | bash 模式）
-  if [ -z "${CI:-}" ]; then
-    echo "  是否现在配对？请在 Telegram 向你的 Bot 发送 /start，"
-    echo "  将显示的配对码（如 ZPGUDP8H）输入下方，直接回车则跳过。"
-    echo ""
-    if [ -t 0 ]; then
-      read -r -p "请输入配对码（直接回车跳过）: " pairing_code
-    else
-      read -r -p "请输入配对码（直接回车跳过）: " pairing_code </dev/tty
-    fi
-    pairing_code=$(echo "$pairing_code" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
-    if [ -n "$pairing_code" ]; then
-      if OPENCLAW_HOME="$OPENCLAW_DATA_DIR" openclaw pairing approve telegram "$pairing_code" 2>/dev/null; then
-        info "配对成功，该用户已可在私聊中使用 Bot。"
-      else
-        warn "配对失败，请确认配对码正确且 Gateway 已运行。"
-        warn "稍后可执行: OPENCLAW_HOME=$OPENCLAW_DATA_DIR openclaw pairing approve telegram <配对码>"
-      fi
-    fi
-  fi
+  echo "  OpenClaw Gateway 正在运行中"
+  echo "  在 Telegram 向你的 Bot 发送 /start 即可开始使用"
+  echo "  查看日志: tail -f $OPENCLAW_DATA_DIR/gateway.log"
   echo ""
 }
 
