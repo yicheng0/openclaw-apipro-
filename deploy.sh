@@ -387,10 +387,6 @@ main() {
   echo "  - 网关: http://127.0.0.1:$OPENCLAW_PORT"
   echo "  - 配置: $OPENCLAW_DATA_DIR/openclaw.json"
   echo ""
-  echo "  请在 Telegram 中搜索你的 Bot 并发送 /start 开始使用。"
-  echo "  私聊需先配对：Bot 会显示配对码，在服务器执行:"
-  echo "    OPENCLAW_HOME=$OPENCLAW_DATA_DIR openclaw pairing approve telegram <配对码>"
-  echo ""
 
   # 可选：立即配对
   if [ -t 0 ] && [ -z "${CI:-}" ]; then
