@@ -12,12 +12,12 @@
 ## 快速开始
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/yicheng0/openclaw-/main/deploy.sh | bash -s -- "你的BREAKOUT_API_KEY"
+curl -fsSL https://raw.githubusercontent.com/yicheng0/openclaw-/main/deploy.sh | bash
 ```
 
 按提示依次：
 
-1. ~~输入 Breakout API Token~~（已通过参数传入，自动跳过）
+1. 输入 **Breakout API Token**（在 [Breakout](https://breakout.wenwen-ai.com) 注册后获取）
 2. 输入 **Telegram Bot Token**（在 @BotFather 创建 Bot 后获取）
 3. 选择模型类型：**1) Claude（推荐）** / **2) OpenAI 格式** / **3) Gemini**，并可自定义模型 ID
 4. 选择运行方式：**1) Docker（推荐）** 或 **2) 本机 Node**（直接回车默认选 1）

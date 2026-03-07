@@ -6,11 +6,11 @@
 # - 支持 Docker 或本机 Node 运行
 #
 # 用法（一键部署）：
-#   curl -fsSL https://你的域名/deploy.sh | bash -s -- "BREAKOUT_API_KEY"
+#   curl -fsSL https://你的域名/deploy.sh | bash
 #
 # 参数说明：
-#   $1  Breakout API Key（必填，通过命令行传入）
-#   Telegram Bot Token 在脚本运行时交互输入
+#   所有配置均在脚本运行时交互输入
+#   Breakout API Key 和 Telegram Bot Token 均通过提示输入
 #
 set -e
 
@@ -47,7 +47,11 @@ read_token() {
     return
   fi
   while true; do
-    read -r -p "$prompt" val
+    if [ -t 0 ]; then
+      read -r -p "$prompt" val
+    else
+      read -r -p "$prompt" val </dev/tty
+    fi
     val=$(echo "$val" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
     if [ -n "$val" ]; then
       echo "$val"
@@ -132,7 +136,11 @@ choose_model() {
     echo "    [3] Gemini 系列（如 gemini-3-flash-preview）"
     echo ""
     while true; do
-      read -r -p "请输入 1、2 或 3（直接回车默认选 1）: " choice
+      if [ -t 0 ]; then
+        read -r -p "请输入 1、2 或 3（直接回车默认选 1）: " choice
+      else
+        read -r -p "请输入 1、2 或 3（直接回车默认选 1）: " choice </dev/tty
+      fi
       choice="${choice:-1}"
       case "$choice" in
         1) MODEL_TYPE=claude; break ;;
@@ -178,7 +186,11 @@ choose_model() {
   else
     echo ""
     echo "  当前选择: $MODEL_TYPE 格式，默认模型: $DEFAULT_MODEL_ID"
-    read -r -p "  请输入模型 ID（直接回车使用默认 $DEFAULT_MODEL_ID）: " input_model
+    if [ -t 0 ]; then
+      read -r -p "  请输入模型 ID（直接回车使用默认 $DEFAULT_MODEL_ID）: " input_model
+    else
+      read -r -p "  请输入模型 ID（直接回车使用默认 $DEFAULT_MODEL_ID）: " input_model </dev/tty
+    fi
     input_model=$(echo "$input_model" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
     if [ -n "$input_model" ]; then
       MODEL_ID="$input_model"
@@ -349,12 +361,6 @@ run_node() {
 
 # --- 主流程 ---
 main() {
-  # 解析位置参数（支持 curl | bash -s -- "KEY" 用法）
-  # 只接受 Breakout API Key，Telegram Token 始终交互输入
-  if [ -n "${1:-}" ]; then
-    BREAKOUT_API_KEY="$1"
-  fi
-
   echo ""
   echo "=============================================="
   echo "  OpenClaw 一键部署（Breakout 版）"
@@ -405,7 +411,11 @@ main() {
       echo "    [2] 本机 Node     — 无容器、占用略小，需已安装 Node.js 22+"
       echo ""
       while true; do
-        read -r -p "请输入 1 或 2（直接回车默认选 1）: " choice
+        if [ -t 0 ]; then
+          read -r -p "请输入 1 或 2（直接回车默认选 1）: " choice
+        else
+          read -r -p "请输入 1 或 2（直接回车默认选 1）: " choice </dev/tty
+        fi
         choice=$(echo "${choice:-1}" | tr '[:upper:]' '[:lower:]')
         case "$choice" in
           1|docker) USE_DOCKER=1; break ;;
@@ -449,7 +459,11 @@ main() {
     echo "  是否现在配对？请在 Telegram 向你的 Bot 发送 /start，"
     echo "  将显示的配对码（如 QE8E59CF）输入下方，直接回车则跳过。"
     echo ""
-    read -r -p "请输入配对码（直接回车跳过）: " pairing_code
+    if [ -t 0 ]; then
+      read -r -p "请输入配对码（直接回车跳过）: " pairing_code
+    else
+      read -r -p "请输入配对码（直接回车跳过）: " pairing_code </dev/tty
+    fi
     pairing_code=$(echo "$pairing_code" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
     if [ -n "$pairing_code" ]; then
       if [ "$RUN_MODE" = "docker" ]; then
