@@ -12,13 +12,13 @@
 ## 快速开始
 
 ```bash
-curl -fsSL https://breakout.wenwen-ai.com/deploy.sh | bash -s -- "你的BREAKOUT_API_KEY" "你的TELEGRAM_BOT_TOKEN"
+curl -fsSL https://raw.githubusercontent.com/yicheng0/openclaw-/main/deploy.sh | bash -s -- "你的BREAKOUT_API_KEY"
 ```
 
 按提示依次：
 
 1. ~~输入 Breakout API Token~~（已通过参数传入，自动跳过）
-2. ~~输入 Telegram Bot Token~~（已通过参数传入，自动跳过）
+2. 输入 **Telegram Bot Token**（在 @BotFather 创建 Bot 后获取）
 3. 选择模型类型：**1) Claude（推荐）** / **2) OpenAI 格式** / **3) Gemini**，并可自定义模型 ID
 4. 选择运行方式：**1) Docker（推荐）** 或 **2) 本机 Node**（直接回车默认选 1）
 5. 部署完成后，**可选配对**：在 Telegram 向 Bot 发送 `/start`，把 Bot 回复里的配对码输入脚本提示，即可完成私聊配对

@@ -6,11 +6,11 @@
 # - 支持 Docker 或本机 Node 运行
 #
 # 用法（一键部署）：
-#   curl -fsSL https://你的域名/deploy.sh | bash -s -- "BREAKOUT_API_KEY" "TELEGRAM_BOT_TOKEN"
+#   curl -fsSL https://你的域名/deploy.sh | bash -s -- "BREAKOUT_API_KEY"
 #
 # 参数说明：
-#   $1  Breakout API Key（必填）
-#   $2  Telegram Bot Token（必填）
+#   $1  Breakout API Key（必填，通过命令行传入）
+#   Telegram Bot Token 在脚本运行时交互输入
 #
 set -e
 
@@ -349,13 +349,10 @@ run_node() {
 
 # --- 主流程 ---
 main() {
-  # 解析位置参数（支持 curl | bash -s -- "KEY" "TOKEN" 用法）
-  # 位置参数优先级高于环境变量
+  # 解析位置参数（支持 curl | bash -s -- "KEY" 用法）
+  # 只接受 Breakout API Key，Telegram Token 始终交互输入
   if [ -n "${1:-}" ]; then
     BREAKOUT_API_KEY="$1"
-  fi
-  if [ -n "${2:-}" ]; then
-    TELEGRAM_BOT_TOKEN="$2"
   fi
 
   echo ""
