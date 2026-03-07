@@ -3,7 +3,7 @@
 # OpenClaw 一键部署脚本（Breakout 版）
 # - 使用 Breakout (wenwen-ai) API
 # - 支持 Claude / OpenAI 格式 / Gemini 三种模型格式
-# - 支持 Docker 或本机 Node 运行
+# - 本机 Node.js 运行，自动安装环境
 #
 # 用法（一键部署）：
 #   curl -fsSL https://你的域名/deploy.sh | bash
@@ -16,8 +16,6 @@ set -e
 
 OPENCLAW_DATA_DIR="${OPENCLAW_DATA_DIR:-/opt/openclaw}"
 OPENCLAW_PORT="${OPENCLAW_PORT:-18789}"
-OPENCLAW_IMAGE="${OPENCLAW_IMAGE:-yicheng0/openclaw-bot:latest}"
-CONTAINER_NAME="${CONTAINER_NAME:-openclaw-bot}"
 
 # --- 颜色与输出 ---
 red='\033[0;31m'
@@ -61,51 +59,7 @@ read_token() {
   done
 }
 
-# --- 检测并安装 Docker ---
-ensure_docker() {
-  if command -v docker &>/dev/null && docker info &>/dev/null 2>&1; then
-    info "Docker 已就绪。"
-    return 0
-  fi
-  warn "未检测到 Docker 或 Docker 未运行。"
-  if [ "$(uname -s)" != "Linux" ]; then
-    err "当前仅支持 Linux 自动安装 Docker。请先安装 Docker 后重试。"
-    exit 1
-  fi
-  if [ "$(id -u)" != "0" ]; then
-    err "安装 Docker 需要 root。请使用: sudo $0"
-    exit 1
-  fi
-  info "正在安装 Docker..."
-  if command -v apt-get &>/dev/null; then
-    apt-get update -qq
-    apt-get install -y -qq ca-certificates curl gpg
-    install -m 0755 -d /etc/apt/keyrings
-    local distro="ubuntu"
-    local codename="jammy"
-    if [ -f /etc/os-release ]; then
-      # shellcheck source=/dev/null
-      . /etc/os-release
-      [ "$ID" = "debian" ] && distro="debian"
-      [ -n "$VERSION_CODENAME" ] && codename="$VERSION_CODENAME"
-    fi
-    curl -fsSL "https://download.docker.com/linux/$distro/gpg" | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
-    chmod a+r /etc/apt/keyrings/docker.gpg
-    echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/$distro $codename stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null
-    apt-get update -qq && apt-get install -y -qq docker-ce docker-ce-cli containerd.io docker-compose-plugin
-  else
-    err "仅支持 apt (Debian/Ubuntu) 自动安装 Docker。请手动安装 Docker 后重试。"
-    exit 1
-  fi
-  info "Docker 安装完成。"
-}
-
-# --- 检测是否可用 Docker（已安装且可连接）---
-docker_available() {
-  command -v docker &>/dev/null && docker info &>/dev/null 2>&1
-}
-
-# --- 检测 jq ---
+# --- 检测 jq，不存在则自动安装 ---
 ensure_jq() {
   if command -v jq &>/dev/null; then
     return 0
@@ -114,10 +68,18 @@ ensure_jq() {
     err "生成配置需要 jq。请安装 jq 后重试。"
     exit 1
   fi
-  if command -v apt-get &>/dev/null && [ "$(id -u)" = "0" ]; then
+  if [ "$(id -u)" != "0" ]; then
+    err "安装 jq 需要 root。请使用: sudo $0"
+    exit 1
+  fi
+  if command -v apt-get &>/dev/null; then
     apt-get update -qq && apt-get install -y -qq jq
+  elif command -v dnf &>/dev/null; then
+    dnf install -y jq
+  elif command -v yum &>/dev/null; then
+    yum install -y jq
   else
-    err "请先安装 jq (apt install jq 或 yum install jq)。"
+    err "请先安装 jq (apt/dnf/yum install jq)。"
     exit 1
   fi
 }
@@ -279,76 +241,101 @@ write_openclaw_config() {
   info "已生成配置: $cfg_path"
 }
 
-# Docker 容器内需使用 /root/.openclaw/workspace（挂载点为 /root/.openclaw）
-fix_workspace_for_docker() {
-  local cfg_path="$OPENCLAW_DATA_DIR/openclaw.json"
-  if [ -f "$cfg_path" ]; then
-    jq '.agents.defaults.workspace = "/root/.openclaw/workspace"' "$cfg_path" > "${cfg_path}.tmp" && mv "${cfg_path}.tmp" "$cfg_path"
-  fi
-}
-
-# 本机 Node 运行时 workspace 使用数据目录下的 workspace
-fix_workspace_for_node() {
-  local cfg_path="$OPENCLAW_DATA_DIR/openclaw.json"
-  if [ -f "$cfg_path" ]; then
-    jq --arg w "$OPENCLAW_DATA_DIR/workspace" '.agents.defaults.workspace = $w' "$cfg_path" > "${cfg_path}.tmp" && mv "${cfg_path}.tmp" "$cfg_path"
-  fi
-}
-
-# --- 拉取 OpenClaw 镜像（若不存在则从 Docker Hub 拉取）---
-ensure_image() {
-  if docker image inspect "$OPENCLAW_IMAGE" &>/dev/null; then
-    info "镜像已存在: $OPENCLAW_IMAGE"
-    return 0
-  fi
-  info "正在拉取镜像: $OPENCLAW_IMAGE"
-  docker pull "$OPENCLAW_IMAGE"
-}
-
-# --- Docker 方式启动 ---
-run_docker() {
-  ensure_docker
-  fix_workspace_for_docker
-  ensure_image
-  if docker ps -a --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$"; then
-    info "已存在容器 $CONTAINER_NAME，正在删除并重建..."
-    docker rm -f "$CONTAINER_NAME" 2>/dev/null || true
-  fi
-  docker run -d \
-    --name "$CONTAINER_NAME" \
-    --restart unless-stopped \
-    -v "${OPENCLAW_DATA_DIR}:/root/.openclaw" \
-    -p "${OPENCLAW_PORT}:${OPENCLAW_PORT}" \
-    "$OPENCLAW_IMAGE"
-  info "容器已启动: $CONTAINER_NAME (端口 $OPENCLAW_PORT)"
-}
-
-# --- 本机 Node 方式启动 ---
-run_node() {
-  fix_workspace_for_node
-  if ! command -v node &>/dev/null; then
-    err "未检测到 Node.js。"
-    if [ "$(uname -s)" = "Linux" ] && [ "$(id -u)" != "0" ]; then
-      echo -e "  ${yellow}请使用 sudo 重新运行本脚本，将自动安装 Docker 并部署：${nc} sudo $0"
-    else
-      echo -e "  请安装 Node.js 22+ 后重试，或（Linux）使用 ${green}sudo $0${nc} 以自动安装 Docker 部署。"
+# --- 自动安装 Node.js 22 ---
+ensure_node() {
+  if command -v node &>/dev/null; then
+    local v
+    v=$(node -p "process.versions.node.split('.')[0]" 2>/dev/null || echo "0")
+    if [ "${v:-0}" -ge 18 ]; then
+      info "Node.js 已就绪: $(node -v)"
+      return 0
     fi
+    warn "当前 Node.js 版本过低 ($(node -v))，正在升级到 Node.js 22..."
+  else
+    info "未检测到 Node.js，正在安装 Node.js 22..."
+  fi
+
+  if [ "$(uname -s)" != "Linux" ]; then
+    err "请先安装 Node.js 22+，参考: https://nodejs.org"
     exit 1
   fi
-  local v
-  v=$(node -p "process.versions.node.split('.')[0]")
-  if [ "${v:-0}" -lt 22 ]; then
-    warn "建议使用 Node.js 22+，当前: $(node -v)"
+
+  if [ "$(id -u)" != "0" ]; then
+    err "安装 Node.js 需要 root。请使用: sudo $0"
+    exit 1
   fi
+
+  if command -v apt-get &>/dev/null; then
+    # Debian / Ubuntu
+    apt-get install -y -qq ca-certificates curl gnupg 2>/dev/null || true
+    curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
+    apt-get install -y -qq nodejs
+  elif command -v dnf &>/dev/null; then
+    # RHEL 8+ / Fedora / Rocky / Alma
+    dnf module disable nodejs -y 2>/dev/null || true
+    curl -fsSL https://rpm.nodesource.com/setup_22.x | bash -
+    dnf install -y nodejs
+  elif command -v yum &>/dev/null; then
+    # CentOS 7
+    curl -fsSL https://rpm.nodesource.com/setup_22.x | bash -
+    yum install -y nodejs
+  else
+    err "不支持的包管理器，请手动安装 Node.js 22+: https://nodejs.org"
+    exit 1
+  fi
+
+  # 刷新 PATH（NodeSource 安装后路径可能未生效）
+  export PATH="/usr/bin:/usr/local/bin:$PATH"
+
+  if ! command -v node &>/dev/null; then
+    err "Node.js 安装失败，请手动安装后重试。"
+    exit 1
+  fi
+  info "Node.js 安装完成: $(node -v)"
+}
+
+# --- 安装 openclaw CLI ---
+ensure_openclaw() {
+  # 刷新 PATH，确保 npm 全局路径可用
+  local npm_global
+  npm_global=$(npm root -g 2>/dev/null | sed 's|/node_modules$|/bin|') || true
+  [ -n "$npm_global" ] && export PATH="$npm_global:$PATH"
+
+  info "正在安装 openclaw（最新版）..."
+  npm install -g openclaw@latest
+
+  # 再次刷新路径
+  npm_global=$(npm root -g 2>/dev/null | sed 's|/node_modules$|/bin|') || true
+  [ -n "$npm_global" ] && export PATH="$npm_global:$PATH"
+
   if ! command -v openclaw &>/dev/null; then
-    info "正在全局安装 openclaw..."
-    npm install -g openclaw@latest
+    err "openclaw 安装失败，请手动执行: npm install -g openclaw@latest"
+    exit 1
   fi
+  info "openclaw 安装完成: $(openclaw --version 2>/dev/null || echo 'OK')"
+}
+
+# --- 启动 Gateway ---
+run_node() {
   export OPENCLAW_HOME="$OPENCLAW_DATA_DIR"
+
+  # 若已有旧进程则停掉
+  local pid_file="${OPENCLAW_DATA_DIR}/gateway.pid"
+  if [ -f "$pid_file" ]; then
+    local old_pid
+    old_pid=$(cat "$pid_file")
+    if kill -0 "$old_pid" 2>/dev/null; then
+      info "停止旧 Gateway 进程 (PID: $old_pid)..."
+      kill "$old_pid" 2>/dev/null || true
+      sleep 1
+    fi
+  fi
+
   info "正在启动 OpenClaw Gateway (端口 $OPENCLAW_PORT)..."
   nohup openclaw gateway --port "$OPENCLAW_PORT" >> "${OPENCLAW_DATA_DIR}/gateway.log" 2>&1 &
-  echo $! > "${OPENCLAW_DATA_DIR}/gateway.pid"
-  info "Gateway 已在后台启动，PID: $(cat "${OPENCLAW_DATA_DIR}/gateway.pid")"
+  echo $! > "$pid_file"
+  info "Gateway 已在后台启动，PID: $(cat "$pid_file")"
+  info "日志: ${OPENCLAW_DATA_DIR}/gateway.log"
 }
 
 # --- 主流程 ---
@@ -368,71 +355,29 @@ main() {
     mkdir -p "$OPENCLAW_DATA_DIR"
   fi
 
+  # --- 第一步：安装运行环境 ---
+  ensure_node
   ensure_jq
+  ensure_openclaw
 
-  # 读取 Breakout API Key（命令行参数或环境变量已设置则跳过交互）
+  # --- 第二步：收集配置 ---
   BREAKOUT_API_KEY="${BREAKOUT_API_KEY:-}"
   TELEGRAM_BOT_TOKEN="${TELEGRAM_BOT_TOKEN:-}"
 
+  echo ""
   info "请在 Breakout 获取 API Key: https://breakout.wenwen-ai.com"
   BREAKOUT_API_KEY=$(read_token "Breakout API Key" "BREAKOUT_API_KEY" "请输入 Breakout API Token: ")
 
+  echo ""
   info "请在 Telegram @BotFather 创建 Bot 并获取 Token"
   TELEGRAM_BOT_TOKEN=$(read_token "Telegram Bot Token" "TELEGRAM_BOT_TOKEN" "请输入 Telegram Bot Token: ")
 
-  # 选择模型类型（设置全局 MODEL_TYPE / MODEL_ID / MODEL_NAME / PROVIDER_NAME / BASE_URL / API_TYPE）
+  # 选择模型类型
   choose_model
 
+  # --- 第三步：写入配置并启动 ---
   write_openclaw_config "$OPENCLAW_DATA_DIR" "$BREAKOUT_API_KEY" "$TELEGRAM_BOT_TOKEN"
-
-  # 运行方式：已设置 USE_DOCKER 则用环境变量；否则交互选择或按 PREFER_NODE 自动选
-  USE_DOCKER="${USE_DOCKER:-}"
-  if [ "$USE_DOCKER" != "1" ] && [ "$USE_DOCKER" != "0" ] && [ "$USE_DOCKER" != "yes" ] && [ "$USE_DOCKER" != "no" ] && [ "$USE_DOCKER" != "true" ] && [ "$USE_DOCKER" != "false" ]; then
-    # 未显式指定时：有 CI/非交互则自动选，否则让用户选
-    if [ -n "${CI:-}" ] || [ ! -t 0 ]; then
-      PREFER_NODE="${PREFER_NODE:-0}"
-      if [ "$PREFER_NODE" = "1" ] || [ "$PREFER_NODE" = "yes" ] || [ "$PREFER_NODE" = "true" ]; then
-        command -v node &>/dev/null && USE_DOCKER=0 || USE_DOCKER=1
-      else
-        docker_available && USE_DOCKER=1 || USE_DOCKER=0
-      fi
-    else
-      echo ""
-      echo "  请选择运行方式："
-      echo "    [1] Docker（推荐）— 环境一致、不污染系统、易升级"
-      echo "    [2] 本机 Node     — 无容器、占用略小，需已安装 Node.js 22+"
-      echo ""
-      while true; do
-        if [ -t 0 ]; then
-          read -r -p "请输入 1 或 2（直接回车默认选 1）: " choice
-        else
-          read -r -p "请输入 1 或 2（直接回车默认选 1）: " choice </dev/tty
-        fi
-        choice=$(echo "${choice:-1}" | tr '[:upper:]' '[:lower:]')
-        case "$choice" in
-          1|docker) USE_DOCKER=1; break ;;
-          2|node)   USE_DOCKER=0; break ;;
-          *) warn "请输入 1 或 2。" ;;
-        esac
-      done
-    fi
-  fi
-
-  # 用户选了 Docker 但未安装时，在 Linux root 下尝试自动安装
-  if [ "$USE_DOCKER" = "1" ] || [ "$USE_DOCKER" = "yes" ] || [ "$USE_DOCKER" = "true" ]; then
-    if ! docker_available && [ "$(uname -s)" = "Linux" ] && [ "$(id -u)" = "0" ]; then
-      info "正在安装 Docker..."
-      ensure_docker
-    fi
-  fi
-
-  if [ "$USE_DOCKER" = "1" ] || [ "$USE_DOCKER" = "yes" ] || [ "$USE_DOCKER" = "true" ]; then
-    run_docker
-    RUN_MODE=docker
-  else
-    run_node
-    RUN_MODE=node
-  fi
+  run_node
 
   echo ""
   echo "=============================================="
@@ -443,33 +388,23 @@ main() {
   echo "  - 配置: $OPENCLAW_DATA_DIR/openclaw.json"
   echo ""
   echo "  请在 Telegram 中搜索你的 Bot 并发送 /start 开始使用。"
-  echo "  私聊需先配对：Bot 会显示配对码，在服务器执行: openclaw pairing approve telegram <配对码>"
+  echo "  私聊需先配对：Bot 会显示配对码，在服务器执行:"
+  echo "    OPENCLAW_HOME=$OPENCLAW_DATA_DIR openclaw pairing approve telegram <配对码>"
   echo ""
 
-  # 可选：立即配对第一个 Telegram 用户（交互模式下询问）
+  # 可选：立即配对
   if [ -t 0 ] && [ -z "${CI:-}" ]; then
     echo "  是否现在配对？请在 Telegram 向你的 Bot 发送 /start，"
     echo "  将显示的配对码（如 QE8E59CF）输入下方，直接回车则跳过。"
     echo ""
-    if [ -t 0 ]; then
-      read -r -p "请输入配对码（直接回车跳过）: " pairing_code
-    else
-      read -r -p "请输入配对码（直接回车跳过）: " pairing_code </dev/tty
-    fi
+    read -r -p "请输入配对码（直接回车跳过）: " pairing_code
     pairing_code=$(echo "$pairing_code" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
     if [ -n "$pairing_code" ]; then
-      if [ "$RUN_MODE" = "docker" ]; then
-        if docker exec "$CONTAINER_NAME" openclaw pairing approve telegram "$pairing_code" 2>/dev/null; then
-          info "配对成功，该用户已可在私聊中使用 Bot。"
-        else
-          warn "配对失败，请确认配对码正确且 Bot 已运行。稍后可在服务器执行: docker exec $CONTAINER_NAME openclaw pairing approve telegram <配对码>"
-        fi
+      if OPENCLAW_HOME="$OPENCLAW_DATA_DIR" openclaw pairing approve telegram "$pairing_code" 2>/dev/null; then
+        info "配对成功，该用户已可在私聊中使用 Bot。"
       else
-        if OPENCLAW_HOME="$OPENCLAW_DATA_DIR" openclaw pairing approve telegram "$pairing_code" 2>/dev/null; then
-          info "配对成功，该用户已可在私聊中使用 Bot。"
-        else
-          warn "配对失败，请确认配对码正确且 Gateway 已运行。稍后可在服务器执行: OPENCLAW_HOME=$OPENCLAW_DATA_DIR openclaw pairing approve telegram <配对码>"
-        fi
+        warn "配对失败，请确认配对码正确且 Gateway 已运行。"
+        warn "稍后可执行: OPENCLAW_HOME=$OPENCLAW_DATA_DIR openclaw pairing approve telegram <配对码>"
       fi
     fi
   fi

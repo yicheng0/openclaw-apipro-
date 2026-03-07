@@ -2,7 +2,7 @@
 
 在新服务器上一条命令部署 OpenClaw Telegram Bot，**必须使用 Breakout**，支持 Claude / OpenAI 格式 / Gemini 三种模型。
 
-> **系统要求：** Linux 服务器（推荐 Ubuntu 20.04+/Debian 11+），Windows/macOS 暂不支持。
+> **系统要求：** Linux 服务器（推荐 Ubuntu 20.04+/Debian 11+/CentOS 7+），Windows/macOS 暂不支持。
 
 ## 需要填写
 
@@ -17,13 +17,11 @@ curl -fsSL https://raw.githubusercontent.com/yicheng0/openclaw-/main/deploy.sh |
 
 按提示依次：
 
-1. 输入 **Breakout API Token**（在 [Breakout](https://breakout.wenwen-ai.com) 注册后获取）
-2. 输入 **Telegram Bot Token**（在 @BotFather 创建 Bot 后获取）
-3. 选择模型类型：**1) Claude（推荐）** / **2) OpenAI 格式** / **3) Gemini**，并可自定义模型 ID
-4. 选择运行方式：**1) Docker（推荐）** 或 **2) 本机 Node**（直接回车默认选 1）
+1. 脚本自动安装 **Node.js 22** 和 **openclaw**（无需手动操作）
+2. 输入 **Breakout API Token**（在 [Breakout](https://breakout.wenwen-ai.com) 注册后获取）
+3. 输入 **Telegram Bot Token**（在 @BotFather 创建 Bot 后获取）
+4. 选择模型类型：**1) Claude（推荐）** / **2) OpenAI 格式** / **3) Gemini**，并可自定义模型 ID
 5. 部署完成后，**可选配对**：在 Telegram 向 Bot 发送 `/start`，把 Bot 回复里的配对码输入脚本提示，即可完成私聊配对
-
-脚本会根据选择检测/安装 Docker 或使用本机 Node，生成 `openclaw.json` 并启动。
 
 ## 支持的模型格式
 
@@ -54,8 +52,6 @@ curl -fsSL https://raw.githubusercontent.com/yicheng0/openclaw-/main/deploy.sh |
 | `BREAKOUT_MODEL_NAME` | 模型显示名称（配合 `BREAKOUT_MODEL_ID` 使用） | 同 Model ID |
 | `OPENCLAW_DATA_DIR` | 数据目录 | `/opt/openclaw` |
 | `OPENCLAW_PORT` | 网关端口 | `18789` |
-| `USE_DOCKER` | `1` 强制 Docker，`0` 强制 Node | 交互询问 |
-| `PREFER_NODE` | 非交互环境下 `1` 优先 Node | `0` |
 
 ### 非交互式部署示例
 
@@ -64,7 +60,6 @@ curl -fsSL https://raw.githubusercontent.com/yicheng0/openclaw-/main/deploy.sh |
 BREAKOUT_API_KEY=your_key \
 TELEGRAM_BOT_TOKEN=your_bot_token \
 BREAKOUT_MODEL_TYPE=claude \
-USE_DOCKER=1 \
 sudo ./deploy.sh
 ```
 
@@ -73,7 +68,6 @@ sudo ./deploy.sh
 | 文件 | 说明 |
 |------|------|
 | `deploy.sh` | 一键部署脚本 |
-| `Dockerfile` | 构建 `openclaw-bot:latest` 镜像 |
 | `images/` | README 配图 |
 
 ## 相关链接
