@@ -16,7 +16,7 @@ set -e
 
 OPENCLAW_DATA_DIR="${OPENCLAW_DATA_DIR:-/opt/openclaw}"
 OPENCLAW_PORT="${OPENCLAW_PORT:-18789}"
-OPENCLAW_IMAGE="${OPENCLAW_IMAGE:-openclaw-bot:latest}"
+OPENCLAW_IMAGE="${OPENCLAW_IMAGE:-yicheng0/openclaw-bot:latest}"
 CONTAINER_NAME="${CONTAINER_NAME:-openclaw-bot}"
 
 # --- 颜色与输出 ---
@@ -295,22 +295,14 @@ fix_workspace_for_node() {
   fi
 }
 
-# --- 构建本地 OpenClaw 镜像（若不存在）---
+# --- 拉取 OpenClaw 镜像（若不存在则从 Docker Hub 拉取）---
 ensure_image() {
   if docker image inspect "$OPENCLAW_IMAGE" &>/dev/null; then
     info "镜像已存在: $OPENCLAW_IMAGE"
     return 0
   fi
-  local script_dir
-  script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-  if [ -f "$script_dir/Dockerfile" ]; then
-    info "正在构建镜像: $OPENCLAW_IMAGE"
-    docker build -t "$OPENCLAW_IMAGE" "$script_dir"
-  else
-    err "未找到镜像 $OPENCLAW_IMAGE 且同目录下无 Dockerfile。请先构建镜像或设置 OPENCLAW_IMAGE。"
-    err "示例: docker build -t openclaw-bot:latest -f $script_dir/Dockerfile $script_dir"
-    exit 1
-  fi
+  info "正在拉取镜像: $OPENCLAW_IMAGE"
+  docker pull "$OPENCLAW_IMAGE"
 }
 
 # --- Docker 方式启动 ---
