@@ -14,7 +14,7 @@
 #
 set -e
 
-OPENCLAW_DATA_DIR="${OPENCLAW_DATA_DIR:-/opt/openclaw}"
+OPENCLAW_DATA_DIR="${OPENCLAW_DATA_DIR:-${HOME}/.openclaw}"
 OPENCLAW_PORT="${OPENCLAW_PORT:-18789}"
 
 # --- 颜色与输出 ---
@@ -332,7 +332,7 @@ run_node() {
   fi
 
   info "正在启动 OpenClaw Gateway (端口 $OPENCLAW_PORT)..."
-  nohup env OPENCLAW_HOME="$OPENCLAW_DATA_DIR" openclaw gateway --port "$OPENCLAW_PORT" >> "${OPENCLAW_DATA_DIR}/gateway.log" 2>&1 &
+  nohup openclaw gateway --port "$OPENCLAW_PORT" >> "${OPENCLAW_DATA_DIR}/gateway.log" 2>&1 &
   echo $! > "$pid_file"
   info "Gateway 已在后台启动，PID: $(cat "$pid_file")"
   info "日志: ${OPENCLAW_DATA_DIR}/gateway.log"
