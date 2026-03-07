@@ -226,7 +226,7 @@ write_openclaw_config() {
           dmPolicy: "pairing",
           botToken: $tg,
           groupPolicy: "open",
-          streamMode: "partial"
+          streaming: "off"
         }
       },
       gateway: {
@@ -388,12 +388,16 @@ main() {
   echo "  - 配置: $OPENCLAW_DATA_DIR/openclaw.json"
   echo ""
 
-  # 可选：立即配对
-  if [ -t 0 ] && [ -z "${CI:-}" ]; then
+  # 可选：立即配对（支持 curl | bash 模式）
+  if [ -z "${CI:-}" ]; then
     echo "  是否现在配对？请在 Telegram 向你的 Bot 发送 /start，"
-    echo "  将显示的配对码（如 QE8E59CF）输入下方，直接回车则跳过。"
+    echo "  将显示的配对码（如 ZPGUDP8H）输入下方，直接回车则跳过。"
     echo ""
-    read -r -p "请输入配对码（直接回车跳过）: " pairing_code
+    if [ -t 0 ]; then
+      read -r -p "请输入配对码（直接回车跳过）: " pairing_code
+    else
+      read -r -p "请输入配对码（直接回车跳过）: " pairing_code </dev/tty
+    fi
     pairing_code=$(echo "$pairing_code" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
     if [ -n "$pairing_code" ]; then
       if OPENCLAW_HOME="$OPENCLAW_DATA_DIR" openclaw pairing approve telegram "$pairing_code" 2>/dev/null; then
