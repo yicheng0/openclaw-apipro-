@@ -329,18 +329,29 @@ run_node() {
   local pid=$!
   echo "$pid" > "${OPENCLAW_DATA_DIR}/gateway.pid"
 
-  # 等待 Gateway 真正启动（最多 10 秒）
+  # 等待 Gateway 启动（最多 60 秒），每秒显示进度点
+  printf "${green}[INFO]${nc} 连接中"
   local i=0
-  while [ $i -lt 10 ]; do
+  local started=0
+  while [ $i -lt 60 ]; do
     sleep 1
     i=$((i+1))
+    printf "."
     if grep -q "listening on" "${OPENCLAW_DATA_DIR}/gateway.log" 2>/dev/null; then
-      info "Gateway 已启动，PID: $pid"
-      info "日志: ${OPENCLAW_DATA_DIR}/gateway.log"
-      return 0
+      started=1
+      break
     fi
   done
-  warn "Gateway 启动超时，请检查日志: ${OPENCLAW_DATA_DIR}/gateway.log"
+  echo ""  # 换行
+
+  if [ $started -eq 1 ]; then
+    info "Gateway 已成功启动 ✓  (PID: $pid)"
+  elif kill -0 "$pid" 2>/dev/null; then
+    info "Gateway 进程运行中（PID: $pid），正在初始化，稍后即可使用"
+    info "查看连接状态: tail -f ${OPENCLAW_DATA_DIR}/gateway.log"
+  else
+    warn "Gateway 进程似乎已退出，请检查日志: ${OPENCLAW_DATA_DIR}/gateway.log"
+  fi
 }
 
 # --- 主流程 ---
