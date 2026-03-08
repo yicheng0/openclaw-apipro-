@@ -301,8 +301,26 @@ ensure_openclaw() {
   npm_global=$(npm root -g 2>/dev/null | sed 's|/node_modules$|/bin|') || true
   [ -n "$npm_global" ] && export PATH="$npm_global:$PATH"
 
-  info "正在安装 openclaw（最新版）..."
-  npm install -g openclaw@latest
+  # 检测是否已安装且为最新版
+  if command -v openclaw &>/dev/null; then
+    local local_ver latest_ver
+    local_ver=$(openclaw --version 2>/dev/null | tr -d 'v' || echo "")
+    info "正在检查 openclaw 版本..."
+    latest_ver=$(npm view openclaw version 2>/dev/null || echo "")
+    if [ -n "$local_ver" ] && [ -n "$latest_ver" ] && [ "$local_ver" = "$latest_ver" ]; then
+      info "openclaw 已是最新版 ($local_ver)，跳过安装"
+      return 0
+    fi
+    if [ -n "$latest_ver" ] && [ "$local_ver" != "$latest_ver" ]; then
+      info "openclaw 版本更新中 ($local_ver → $latest_ver)..."
+    else
+      info "正在安装 openclaw（最新版）..."
+    fi
+  else
+    info "正在安装 openclaw（最新版）..."
+  fi
+
+  npm install -g openclaw@latest --prefer-offline
 
   # 再次刷新路径
   npm_global=$(npm root -g 2>/dev/null | sed 's|/node_modules$|/bin|') || true
