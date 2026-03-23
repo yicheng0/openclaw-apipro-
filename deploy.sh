@@ -84,6 +84,109 @@ ensure_jq() {
   fi
 }
 
+# --- 预设模型菜单（选类型后展示内置列表）---
+# 设置全局变量：MODEL_ID, MODEL_NAME
+choose_preset_model() {
+  local type="$1"
+  local custom_num
+
+  echo ""
+  case "$type" in
+    claude)
+      echo "  请选择 Claude 模型："
+      echo "    [1] claude-sonnet-4-6-20260218  Claude Sonnet 4.6（推荐）★"
+      echo "    [2] 自定义模型 ID..."
+      custom_num=2
+      ;;
+    openai)
+      echo "  请选择 OpenAI 模型："
+      echo "    [1] gpt-5.4               GPT-5.4（推荐）★"
+      echo "    [2] 自定义模型 ID..."
+      custom_num=2
+      ;;
+    gemini)
+      echo "  请选择 Gemini 模型："
+      echo "    [1] gemini-3-flash-preview  Gemini 3 Flash（推荐）★"
+      echo "    [2] 自定义模型 ID..."
+      custom_num=2
+      ;;
+    minimax)
+      echo "  请选择 MiniMax 模型："
+      echo "    [1] minimax-m2.7         MiniMax M2.7（推荐）★"
+      echo "    [2] 自定义模型 ID..."
+      custom_num=2
+      ;;
+  esac
+  echo ""
+
+  while true; do
+    if [ -t 0 ]; then
+      read -r -p "  请输入选项（回车默认 1）: " mchoice
+    else
+      read -r -p "  请输入选项（回车默认 1）: " mchoice </dev/tty
+    fi
+    mchoice="${mchoice:-1}"
+
+    if [ "$mchoice" = "$custom_num" ]; then
+      # 自定义输入
+      while true; do
+        if [ -t 0 ]; then
+          read -r -p "  请输入自定义模型 ID: " custom_id
+        else
+          read -r -p "  请输入自定义模型 ID: " custom_id </dev/tty
+        fi
+        custom_id=$(echo "$custom_id" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+        if [ -n "$custom_id" ]; then
+          MODEL_ID="$custom_id"
+          MODEL_NAME="$custom_id"
+          return
+        fi
+        warn "不能为空，请重新输入。"
+      done
+    fi
+
+    case "$type-$mchoice" in
+      claude-1) MODEL_ID="claude-sonnet-4-6-20260218"; MODEL_NAME="Claude Sonnet 4.6"; return ;;
+      openai-1) MODEL_ID="gpt-5.4";            MODEL_NAME="GPT-5.4";           return ;;
+      gemini-1) MODEL_ID="gemini-3-flash-preview"; MODEL_NAME="Gemini 3 Flash"; return ;;
+      minimax-1) MODEL_ID="minimax-m2.7";      MODEL_NAME="MiniMax M2.7";      return ;;
+      *) warn "请输入 1 到 $custom_num 之间的数字。" ;;
+    esac
+  done
+}
+
+# --- 选择消息渠道 ---
+# 设置全局变量：CHANNEL_TYPE
+choose_channel() {
+  if [ -n "${CHANNEL_TYPE:-}" ]; then
+    case "$CHANNEL_TYPE" in
+      feishu|telegram) ;;
+      *) err "未知渠道类型: $CHANNEL_TYPE（支持 feishu / telegram）"; exit 1 ;;
+    esac
+    return
+  fi
+
+  echo ""
+  echo "  请选择消息渠道："
+  echo "    [1] 飞书（推荐）"
+  echo "    [2] Telegram"
+  echo ""
+
+  while true; do
+    if [ -t 0 ]; then
+      read -r -p "  请输入 1-2（回车默认选 1）: " cchoice
+    else
+      read -r -p "  请输入 1-2（回车默认选 1）: " cchoice </dev/tty
+    fi
+    cchoice="${cchoice:-1}"
+    case "$cchoice" in
+      1) CHANNEL_TYPE=feishu;   break ;;
+      2) CHANNEL_TYPE=telegram; break ;;
+      *) warn "请输入 1 或 2。" ;;
+    esac
+  done
+}
+
 # --- 选择模型类型 ---
 # 设置全局变量：MODEL_TYPE, MODEL_ID, MODEL_NAME, PROVIDER_NAME, BASE_URL, API_TYPE
 choose_model() {
@@ -93,22 +196,24 @@ choose_model() {
   else
     echo ""
     echo "  请选择使用的模型类型："
-    echo "    [1] Claude 系列（如 claude-sonnet-4-6）— 原生 Anthropic 格式（推荐）"
-    echo "    [2] OpenAI 格式（如 gpt-4o、Kimi、DeepSeek 等）"
-    echo "    [3] Gemini 系列（如 gemini-3-flash-preview）"
+    echo "    [1] OpenAI 格式  — GPT-5.4（推荐，价格实惠）"
+    echo "    [2] MiniMax 系列 — 国产大模型"
+    echo "    [3] Gemini 系列  — Google AI"
+    echo "    [4] Claude 系列  — 原生 Anthropic 格式"
     echo ""
     while true; do
       if [ -t 0 ]; then
-        read -r -p "请输入 1、2 或 3（直接回车默认选 1）: " choice
+        read -r -p "请输入 1-4（直接回车默认选 1）: " choice
       else
-        read -r -p "请输入 1、2 或 3（直接回车默认选 1）: " choice </dev/tty
+        read -r -p "请输入 1-4（直接回车默认选 1）: " choice </dev/tty
       fi
       choice="${choice:-1}"
       case "$choice" in
-        1) MODEL_TYPE=claude; break ;;
-        2) MODEL_TYPE=openai; break ;;
-        3) MODEL_TYPE=gemini; break ;;
-        *) warn "请输入 1、2 或 3。" ;;
+        1) MODEL_TYPE=openai;  break ;;
+        2) MODEL_TYPE=minimax; break ;;
+        3) MODEL_TYPE=gemini;  break ;;
+        4) MODEL_TYPE=claude;  break ;;
+        *) warn "请输入 1、2、3 或 4。" ;;
       esac
     done
   fi
@@ -118,22 +223,21 @@ choose_model() {
       PROVIDER_NAME="breakout-claude"
       BASE_URL="https://breakout.wenwen-ai.com"
       API_TYPE="anthropic-messages"
-      DEFAULT_MODEL_ID="claude-sonnet-4-6"
-      DEFAULT_MODEL_NAME="Claude Sonnet 4.6"
       ;;
     openai)
       PROVIDER_NAME="breakout-openai"
       BASE_URL="https://breakout.wenwen-ai.com/v1"
       API_TYPE="openai-completions"
-      DEFAULT_MODEL_ID="gpt-4o"
-      DEFAULT_MODEL_NAME="GPT-4o"
       ;;
     gemini)
       PROVIDER_NAME="breakout-gemini"
       BASE_URL="https://breakout.wenwen-ai.com/v1beta"
       API_TYPE="google-generative-ai"
-      DEFAULT_MODEL_ID="gemini-3-flash-preview"
-      DEFAULT_MODEL_NAME="Gemini 3 Flash"
+      ;;
+    minimax)
+      PROVIDER_NAME="breakout-minimax"
+      BASE_URL="https://breakout.wenwen-ai.com/v1"
+      API_TYPE="openai-completions"
       ;;
     *)
       err "未知模型类型: $MODEL_TYPE"
@@ -141,26 +245,12 @@ choose_model() {
       ;;
   esac
 
-  # 支持环境变量预设模型 ID
+  # 支持环境变量预设模型 ID（跳过预设菜单）
   if [ -n "${BREAKOUT_MODEL_ID:-}" ]; then
     MODEL_ID="$BREAKOUT_MODEL_ID"
     MODEL_NAME="${BREAKOUT_MODEL_NAME:-$MODEL_ID}"
   else
-    echo ""
-    echo "  当前选择: $MODEL_TYPE 格式，默认模型: $DEFAULT_MODEL_ID"
-    if [ -t 0 ]; then
-      read -r -p "  请输入模型 ID（直接回车使用默认 $DEFAULT_MODEL_ID）: " input_model
-    else
-      read -r -p "  请输入模型 ID（直接回车使用默认 $DEFAULT_MODEL_ID）: " input_model </dev/tty
-    fi
-    input_model=$(echo "$input_model" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
-    if [ -n "$input_model" ]; then
-      MODEL_ID="$input_model"
-      MODEL_NAME="$input_model"
-    else
-      MODEL_ID="$DEFAULT_MODEL_ID"
-      MODEL_NAME="$DEFAULT_MODEL_NAME"
-    fi
+    choose_preset_model "$MODEL_TYPE"
   fi
 
   info "已选择: [$MODEL_TYPE] $MODEL_ID"
@@ -170,57 +260,36 @@ choose_model() {
 write_openclaw_config() {
   local data_dir="$1"
   local breakout_key="$2"
-  local telegram_token="$3"
+  local channel_type="$3"
+  local feishu_app_id="$4"
+  local feishu_app_secret="$5"
+  local telegram_token="$6"
   local gateway_token
   gateway_token=$(openssl rand -hex 16 2>/dev/null || echo "fallback-$(date +%s)-$$")
 
   mkdir -p "$data_dir/workspace"
   local cfg_path="$data_dir/openclaw.json"
 
-  # 使用 jq 安全生成 JSON（避免 token 中的特殊字符问题）
-  jq -n \
-    --arg apikey "$breakout_key" \
-    --arg tg "$telegram_token" \
-    --arg gw "$gateway_token" \
-    --arg workspace "$data_dir/workspace" \
-    --argjson port "$OPENCLAW_PORT" \
-    --arg provider "$PROVIDER_NAME" \
-    --arg baseUrl "$BASE_URL" \
-    --arg api "$API_TYPE" \
-    --arg modelId "$MODEL_ID" \
-    --arg modelName "$MODEL_NAME" \
-    '{
-      meta: { lastTouchedVersion: "2026.2.3-1", lastTouchedAt: (now | todate) },
-      models: {
-        mode: "merge",
-        providers: {
-          ($provider): {
-            baseUrl: $baseUrl,
-            apiKey: $apikey,
-            api: $api,
-            models: [
-              {
-                id: $modelId,
-                name: $modelName,
-                reasoning: false,
-                input: ["text", "image"],
-                contextWindow: 200000,
-                maxTokens: 8192
-              }
-            ]
+  # 构建 channels JSON 对象（按渠道类型分支）
+  local channels_json
+  if [ "$channel_type" = "feishu" ]; then
+    channels_json=$(jq -n \
+      --arg appId "$feishu_app_id" \
+      --arg appSecret "$feishu_app_secret" \
+      '{
+        feishu: {
+          enabled: true,
+          dmPolicy: "pairing",
+          groupPolicy: "allowlist",
+          accounts: {
+            main: { appId: $appId, appSecret: $appSecret }
           }
         }
-      },
-      agents: {
-        defaults: {
-          model: { primary: ($provider + "/" + $modelId) },
-          workspace: $workspace,
-          maxConcurrent: 4,
-          subagents: { maxConcurrent: 8 },
-          compaction: { mode: "safeguard" }
-        }
-      },
-      channels: {
+      }')
+  else
+    channels_json=$(jq -n \
+      --arg tg "$telegram_token" \
+      '{
         telegram: {
           enabled: true,
           dmPolicy: "pairing",
@@ -228,7 +297,67 @@ write_openclaw_config() {
           groupPolicy: "open",
           streaming: "off"
         }
+      }')
+  fi
+
+  # 使用 jq 安全生成完整 JSON（避免 token 中的特殊字符问题）
+  # 所有 4 个 provider 均写入配置，用同一个 Breakout API Key
+  jq -n \
+    --arg apikey "$breakout_key" \
+    --argjson channels "$channels_json" \
+    --arg gw "$gateway_token" \
+    --arg workspace "$data_dir/workspace" \
+    --argjson port "$OPENCLAW_PORT" \
+    --arg defaultModel "$PROVIDER_NAME/$MODEL_ID" \
+    '{
+      meta: { lastTouchedVersion: "2026.2.3-1", lastTouchedAt: (now | todate) },
+      models: {
+        mode: "merge",
+        providers: {
+          "breakout-openai": {
+            baseUrl: "https://breakout.wenwen-ai.com/v1",
+            apiKey: $apikey,
+            api: "openai-completions",
+            models: [
+              { id: "gpt-5.4", name: "GPT-5.4", reasoning: false, input: ["text", "image"], contextWindow: 200000, maxTokens: 8192 }
+            ]
+          },
+          "breakout-minimax": {
+            baseUrl: "https://breakout.wenwen-ai.com/v1",
+            apiKey: $apikey,
+            api: "openai-completions",
+            models: [
+              { id: "minimax-m2.7", name: "MiniMax M2.7", reasoning: false, input: ["text", "image"], contextWindow: 200000, maxTokens: 8192 }
+            ]
+          },
+          "breakout-gemini": {
+            baseUrl: "https://breakout.wenwen-ai.com/v1beta",
+            apiKey: $apikey,
+            api: "google-generative-ai",
+            models: [
+              { id: "gemini-3-flash-preview", name: "Gemini 3 Flash", reasoning: false, input: ["text", "image"], contextWindow: 200000, maxTokens: 8192 }
+            ]
+          },
+          "breakout-claude": {
+            baseUrl: "https://breakout.wenwen-ai.com",
+            apiKey: $apikey,
+            api: "anthropic-messages",
+            models: [
+              { id: "claude-sonnet-4-6-20260218", name: "Claude Sonnet 4.6", reasoning: false, input: ["text", "image"], contextWindow: 200000, maxTokens: 8192 }
+            ]
+          }
+        }
       },
+      agents: {
+        defaults: {
+          model: { primary: $defaultModel },
+          workspace: $workspace,
+          maxConcurrent: 4,
+          subagents: { maxConcurrent: 8 },
+          compaction: { mode: "safeguard" }
+        }
+      },
+      channels: $channels,
       gateway: {
         port: $port,
         mode: "local",
@@ -396,33 +525,51 @@ main() {
 
   # --- 第二步：收集配置 ---
   BREAKOUT_API_KEY="${BREAKOUT_API_KEY:-}"
+  FEISHU_APP_ID="${FEISHU_APP_ID:-}"
+  FEISHU_APP_SECRET="${FEISHU_APP_SECRET:-}"
   TELEGRAM_BOT_TOKEN="${TELEGRAM_BOT_TOKEN:-}"
 
   echo ""
   info "请在 Breakout 获取 API Key: https://breakout.wenwen-ai.com"
   BREAKOUT_API_KEY=$(read_token "Breakout API Key" "BREAKOUT_API_KEY" "请输入 Breakout API Token: ")
 
-  echo ""
-  info "请在 Telegram @BotFather 创建 Bot 并获取 Token"
-  TELEGRAM_BOT_TOKEN=$(read_token "Telegram Bot Token" "TELEGRAM_BOT_TOKEN" "请输入 Telegram Bot Token: ")
+  # 选择消息渠道
+  choose_channel
+
+  if [ "$CHANNEL_TYPE" = "feishu" ]; then
+    echo ""
+    info "请在飞书开放平台创建企业自建应用并获取凭据"
+    info "地址：https://open.feishu.cn/app"
+    FEISHU_APP_ID=$(read_token "飞书 App ID" "FEISHU_APP_ID" "请输入飞书 App ID（格式 cli_xxxx）: ")
+    FEISHU_APP_SECRET=$(read_token "飞书 App Secret" "FEISHU_APP_SECRET" "请输入飞书 App Secret: ")
+  else
+    echo ""
+    info "请在 Telegram @BotFather 创建 Bot 并获取 Token"
+    TELEGRAM_BOT_TOKEN=$(read_token "Telegram Bot Token" "TELEGRAM_BOT_TOKEN" "请输入 Telegram Bot Token: ")
+  fi
 
   # 选择模型类型
   choose_model
 
   # --- 第三步：写入配置并启动 ---
-  write_openclaw_config "$OPENCLAW_DATA_DIR" "$BREAKOUT_API_KEY" "$TELEGRAM_BOT_TOKEN"
+  write_openclaw_config "$OPENCLAW_DATA_DIR" "$BREAKOUT_API_KEY" "$CHANNEL_TYPE" "$FEISHU_APP_ID" "$FEISHU_APP_SECRET" "$TELEGRAM_BOT_TOKEN"
   run_node
 
   echo ""
   echo "=============================================="
   echo -e "  ${green}部署完成${nc}"
   echo "=============================================="
+  echo "  - 渠道: $CHANNEL_TYPE"
   echo "  - 模型: $MODEL_NAME ($MODEL_TYPE 格式，via Breakout)"
   echo "  - 网关: http://127.0.0.1:$OPENCLAW_PORT"
   echo "  - 配置: $OPENCLAW_DATA_DIR/openclaw.json"
   echo ""
   echo "  OpenClaw Gateway 正在运行中"
-  echo "  在 Telegram 向你的 Bot 发送 /start 即可开始使用"
+  if [ "$CHANNEL_TYPE" = "feishu" ]; then
+    echo "  在飞书中将机器人添加到会话，发送消息即可开始使用"
+  else
+    echo "  在 Telegram 向你的 Bot 发送 /start 即可开始使用"
+  fi
   echo "  查看日志: tail -f $OPENCLAW_DATA_DIR/gateway.log"
   echo ""
 }

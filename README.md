@@ -20,16 +20,17 @@ curl -fsSL https://raw.githubusercontent.com/yicheng0/openclaw-/main/deploy.sh |
 1. 脚本自动安装 **Node.js 22** 和 **openclaw**（无需手动操作）
 2. 输入 **Breakout API Token**（在 [Breakout](https://breakout.wenwen-ai.com) 注册后获取）
 3. 输入 **Telegram Bot Token**（在 @BotFather 创建 Bot 后获取）
-4. 选择模型类型：**1) Claude（推荐）** / **2) OpenAI 格式** / **3) Gemini**，并可自定义模型 ID
+4. 选择模型类型：**1) Claude（推荐）** / **2) OpenAI** / **3) Gemini** / **4) MiniMax**，并从内置列表选择具体模型（或自定义输入）
 5. 部署完成后，**可选配对**：在 Telegram 向 Bot 发送 `/start`，把 Bot 回复里的配对码输入脚本提示，即可完成私聊配对
 
 ## 支持的模型格式
 
-| 类型 | API 格式 | 示例模型 |
+| 类型 | API 格式 | 内置预设模型 |
 |------|---------|---------|
-| Claude 系列 | anthropic-messages | `claude-sonnet-4-6`、`claude-opus-4-6` |
-| OpenAI 格式 | openai-completions | `gpt-4o`、`deepseek-chat`、`moonshot-v1-8k` |
-| Gemini 系列 | google-generative-ai | `gemini-3-flash-preview` |
+| Claude 系列 | anthropic-messages | `claude-sonnet-4-6-20260218`（推荐） |
+| OpenAI 格式 | openai-completions | `gpt-5.3-codex`（推荐） |
+| Gemini 系列 | google-generative-ai | `gemini-3-flash-preview`（推荐） |
+| MiniMax 系列 | openai-completions | `minimax-m2.7`（推荐） |
 
 ## 部署效果
 
