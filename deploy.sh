@@ -16,6 +16,9 @@ set -e
 
 OPENCLAW_DATA_DIR="${OPENCLAW_DATA_DIR:-${HOME}/.openclaw}"
 OPENCLAW_PORT="${OPENCLAW_PORT:-18789}"
+# pin 到一个已验证可安装的版本；如需切换可通过环境变量覆盖
+OPENCLAW_NPM_SPEC="${OPENCLAW_NPM_SPEC:-openclaw@2026.3.13}"
+OPENCLAW_FORCE_UPDATE="${OPENCLAW_FORCE_UPDATE:-0}"
 
 # --- 颜色与输出 ---
 red='\033[0;31m'
@@ -427,36 +430,36 @@ ensure_node() {
 ensure_openclaw() {
   # 刷新 PATH，确保 npm 全局路径可用
   local npm_global
+  local current_ver
   npm_global=$(npm root -g 2>/dev/null | sed 's|/node_modules$|/bin|') || true
   [ -n "$npm_global" ] && export PATH="$npm_global:$PATH"
 
-  # 检测是否已安装且为最新版
+  # 默认优先复用已安装版本，避免上游 latest 失效时影响重复执行
   if command -v openclaw &>/dev/null; then
-    local local_ver latest_ver
-    local_ver=$(openclaw --version 2>/dev/null | tr -d 'v' || echo "")
-    info "正在检查 openclaw 版本..."
-    latest_ver=$(npm view openclaw version 2>/dev/null || echo "")
-    if [ -n "$local_ver" ] && [ -n "$latest_ver" ] && [ "$local_ver" = "$latest_ver" ]; then
-      info "openclaw 已是最新版 ($local_ver)，跳过安装"
+    current_ver=$(openclaw --version 2>/dev/null || echo "unknown")
+    if [ "$OPENCLAW_FORCE_UPDATE" != "1" ]; then
+      info "openclaw 已安装: $current_ver"
+      info "跳过更新；如需强制更新，设置 OPENCLAW_FORCE_UPDATE=1"
       return 0
     fi
-    if [ -n "$latest_ver" ] && [ "$local_ver" != "$latest_ver" ]; then
-      info "openclaw 版本更新中 ($local_ver → $latest_ver)..."
-    else
-      info "正在安装 openclaw（最新版）..."
-    fi
+    info "检测到 OPENCLAW_FORCE_UPDATE=1，准备重新安装 $OPENCLAW_NPM_SPEC"
   else
-    info "正在安装 openclaw（最新版）..."
+    info "正在安装 openclaw ($OPENCLAW_NPM_SPEC)..."
   fi
 
-  npm install -g openclaw@latest --prefer-offline
+  if ! npm install -g "$OPENCLAW_NPM_SPEC" --prefer-offline; then
+    err "openclaw 安装失败：$OPENCLAW_NPM_SPEC"
+    err "上游 latest 版本偶尔会因为依赖发布异常导致 ETARGET。"
+    err "可改用已验证版本，例如：OPENCLAW_NPM_SPEC=openclaw@2026.3.13 sudo ./deploy.sh"
+    exit 1
+  fi
 
   # 再次刷新路径
   npm_global=$(npm root -g 2>/dev/null | sed 's|/node_modules$|/bin|') || true
   [ -n "$npm_global" ] && export PATH="$npm_global:$PATH"
 
   if ! command -v openclaw &>/dev/null; then
-    err "openclaw 安装失败，请手动执行: npm install -g openclaw@latest"
+    err "openclaw 安装失败，请手动执行: npm install -g $OPENCLAW_NPM_SPEC"
     exit 1
   fi
   info "openclaw 安装完成: $(openclaw --version 2>/dev/null || echo 'OK')"

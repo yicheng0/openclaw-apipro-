@@ -17,7 +17,7 @@ curl -fsSL https://raw.githubusercontent.com/yicheng0/openclaw-/main/deploy.sh |
 
 按提示依次：
 
-1. 脚本自动安装 **Node.js 22** 和 **openclaw**（无需手动操作）
+1. 脚本自动安装 **Node.js 22** 和 **已验证版本的 openclaw**（无需手动操作）
 2. 输入 **Breakout API Token**（在 [Breakout](https://breakout.wenwen-ai.com) 注册后获取）
 3. 输入 **Telegram Bot Token**（在 @BotFather 创建 Bot 后获取）
 4. 选择模型类型：**1) Claude（推荐）** / **2) OpenAI** / **3) Gemini** / **4) MiniMax**，并从内置列表选择具体模型（或自定义输入）
@@ -53,6 +53,8 @@ curl -fsSL https://raw.githubusercontent.com/yicheng0/openclaw-/main/deploy.sh |
 | `BREAKOUT_MODEL_NAME` | 模型显示名称（配合 `BREAKOUT_MODEL_ID` 使用） | 同 Model ID |
 | `OPENCLAW_DATA_DIR` | 数据目录 | `/opt/openclaw` |
 | `OPENCLAW_PORT` | 网关端口 | `18789` |
+| `OPENCLAW_NPM_SPEC` | 要安装的 openclaw npm 版本 | `openclaw@2026.3.13` |
+| `OPENCLAW_FORCE_UPDATE` | 已安装 openclaw 时是否强制重装（`1` 为重装） | `0` |
 
 ### 非交互式部署示例
 
@@ -62,6 +64,21 @@ BREAKOUT_API_KEY=your_key \
 TELEGRAM_BOT_TOKEN=your_bot_token \
 BREAKOUT_MODEL_TYPE=claude \
 sudo ./deploy.sh
+```
+
+### openclaw 安装报 `ETARGET` 怎么办
+
+如果上游 `openclaw@latest` 短时间内引用了一个尚未发布或已撤回的依赖版本，`npm` 会报类似：
+
+```text
+npm error code ETARGET
+npm error notarget No matching version found for xxx
+```
+
+这种情况不是服务器系统本身的问题，而是上游 npm 依赖解析失败。此仓库默认已 pin 到一个已验证可安装的版本；如果你要手动指定版本，也可以这样执行：
+
+```bash
+OPENCLAW_NPM_SPEC=openclaw@2026.3.13 sudo ./deploy.sh
 ```
 
 ## 文件说明
