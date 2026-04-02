@@ -14,7 +14,7 @@
 ## 快速开始
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/yicheng0/openclaw-apipro-/main/deploy.sh | bash
+curl -fsSL https://raw.githubusercontent.com/yicheng0/openclaw-apipro-/main/deploy.sh | sudo bash
 ```
 
 按提示依次：
@@ -57,23 +57,25 @@ curl -fsSL https://raw.githubusercontent.com/yicheng0/openclaw-apipro-/main/depl
 
 ```bash
 # 飞书 + Claude，国内节点
-APIPRO_API_KEY=your_key \
-APIPRO_REGION=cn \
-CHANNEL_TYPE=feishu \
-FEISHU_APP_ID=cli_xxxx \
-FEISHU_APP_SECRET=your_secret \
-APIPRO_MODEL_TYPE=claude \
-sudo bash deploy.sh
+curl -fsSL https://raw.githubusercontent.com/yicheng0/openclaw-apipro-/main/deploy.sh | sudo env \
+  APIPRO_API_KEY=your_key \
+  APIPRO_REGION=cn \
+  CHANNEL_TYPE=feishu \
+  FEISHU_APP_ID=cli_xxxx \
+  FEISHU_APP_SECRET=your_secret \
+  APIPRO_MODEL_TYPE=claude \
+  bash
 ```
 
 ```bash
 # Telegram + GPT，海外节点
-APIPRO_API_KEY=your_key \
-APIPRO_REGION=global \
-CHANNEL_TYPE=telegram \
-TELEGRAM_BOT_TOKEN=your_bot_token \
-APIPRO_MODEL_TYPE=openai \
-sudo bash deploy.sh
+curl -fsSL https://raw.githubusercontent.com/yicheng0/openclaw-apipro-/main/deploy.sh | sudo env \
+  APIPRO_API_KEY=your_key \
+  APIPRO_REGION=global \
+  CHANNEL_TYPE=telegram \
+  TELEGRAM_BOT_TOKEN=your_bot_token \
+  APIPRO_MODEL_TYPE=openai \
+  bash
 ```
 
 ### openclaw 安装报 `ETARGET` 怎么办
@@ -88,7 +90,7 @@ npm error notarget No matching version found for xxx
 此仓库默认已 pin 到一个已验证版本，也可手动指定：
 
 ```bash
-OPENCLAW_NPM_SPEC=openclaw@2026.3.13 sudo bash deploy.sh
+curl -fsSL https://raw.githubusercontent.com/yicheng0/openclaw-apipro-/main/deploy.sh | sudo env OPENCLAW_NPM_SPEC=openclaw@2026.3.13 bash
 ```
 
 ## 文件说明

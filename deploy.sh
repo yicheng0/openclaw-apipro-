@@ -7,7 +7,7 @@
 # - 本机 Node.js 运行，自动安装环境
 #
 # 用法（一键部署）：
-#   curl -fsSL https://你的域名/deploy.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/yicheng0/openclaw-apipro-/main/deploy.sh | sudo bash
 #
 # 参数说明：
 #   所有配置均在脚本运行时交互输入
@@ -23,7 +23,7 @@ OPENCLAW_PORT="${OPENCLAW_PORT:-18789}"
 OPENCLAW_NPM_SPEC="${OPENCLAW_NPM_SPEC:-openclaw@2026.3.13}"
 OPENCLAW_FORCE_UPDATE="${OPENCLAW_FORCE_UPDATE:-0}"
 # 用于错误提示中的 sudo 命令（curl|bash 场景下 $0 是 bash，无意义）
-SCRIPT_URL="${SCRIPT_URL:-https://raw.githubusercontent.com/yicheng0/openclaw-/main/deploy.sh}"
+SCRIPT_URL="${SCRIPT_URL:-https://raw.githubusercontent.com/yicheng0/openclaw-apipro-/main/deploy.sh}"
 
 # --- 颜色与输出 ---
 red='\033[0;31m'
