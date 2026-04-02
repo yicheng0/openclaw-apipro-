@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 #
-# OpenClaw 一键部署脚本（Breakout 版）
-# - 使用 Breakout (wenwen-ai) API
-# - 支持 Claude / OpenAI 格式 / Gemini 三种模型格式
+# OpenClaw Gateway 一键部署脚本
+# - 由 APIPro 团队开发维护
+# - 支持国内节点（api.wenwen-ai.com）/ 海外节点（api.apipro.ai）
+# - 支持 Claude / OpenAI 格式 / Gemini / MiniMax 四种模型格式
 # - 本机 Node.js 运行，自动安装环境
 #
 # 用法（一键部署）：
@@ -10,15 +11,19 @@
 #
 # 参数说明：
 #   所有配置均在脚本运行时交互输入
-#   Breakout API Key 和 Telegram Bot Token 均通过提示输入
+#   API Key、渠道凭据均通过提示输入
+#   支持环境变量预设以实现无交互部署
 #
-set -e
+set -eo pipefail
 
 OPENCLAW_DATA_DIR="${OPENCLAW_DATA_DIR:-${HOME}/.openclaw}"
 OPENCLAW_PORT="${OPENCLAW_PORT:-18789}"
+[[ "$OPENCLAW_PORT" =~ ^[0-9]+$ ]] || { echo "[ERROR] OPENCLAW_PORT 必须是数字，当前值: $OPENCLAW_PORT" >&2; exit 1; }
 # pin 到一个已验证可安装的版本；如需切换可通过环境变量覆盖
 OPENCLAW_NPM_SPEC="${OPENCLAW_NPM_SPEC:-openclaw@2026.3.13}"
 OPENCLAW_FORCE_UPDATE="${OPENCLAW_FORCE_UPDATE:-0}"
+# 用于错误提示中的 sudo 命令（curl|bash 场景下 $0 是 bash，无意义）
+SCRIPT_URL="${SCRIPT_URL:-https://raw.githubusercontent.com/yicheng0/openclaw-/main/deploy.sh}"
 
 # --- 颜色与输出 ---
 red='\033[0;31m'
@@ -29,30 +34,32 @@ info() { echo -e "${green}[INFO]${nc} $*"; }
 warn() { echo -e "${yellow}[WARN]${nc} $*"; }
 err()  { echo -e "${red}[ERROR]${nc} $*"; }
 
-# --- 检测 root / sudo ---
-need_sudo() {
-  if [ -w "$OPENCLAW_DATA_DIR" ] 2>/dev/null || [ ! -d "$OPENCLAW_DATA_DIR" ]; then
-    return 1
+# --- 失败时清理 ---
+_cleanup() {
+  local code=$?
+  if [ $code -ne 0 ]; then
+    err "部署失败（退出码: $code），正在清理..."
+    rm -f "${OPENCLAW_DATA_DIR}/openclaw.json"
   fi
-  [ "$(id -u)" != "0" ]
+}
+trap '_cleanup' EXIT
+
+# --- 检测是否需要 root ---
+is_root() {
+  [ "$(id -u)" = "0" ]
 }
 
 # --- 读取用户输入（带默认环境变量）---
 read_token() {
-  local name="$1"
-  local env_name="$2"
-  local prompt="$3"
+  local env_name="$1"
+  local prompt="$2"
   local val="${!env_name}"
   if [ -n "$val" ]; then
     echo "$val"
     return
   fi
   while true; do
-    if [ -t 0 ]; then
-      read -r -p "$prompt" val
-    else
-      read -r -p "$prompt" val </dev/tty
-    fi
+    read_input "$prompt" val
     val=$(echo "$val" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
     if [ -n "$val" ]; then
       echo "$val"
@@ -60,6 +67,17 @@ read_token() {
     fi
     warn "不能为空，请重新输入。"
   done
+}
+
+# --- 从终端读取一行输入（兼容 curl|bash 场景）---
+read_input() {
+  local prompt="$1"
+  local varname="$2"
+  if [ -t 0 ]; then
+    read -r -p "$prompt" "$varname"
+  else
+    read -r -p "$prompt" "$varname" </dev/tty
+  fi
 }
 
 # --- 检测 jq，不存在则自动安装 ---
@@ -71,8 +89,8 @@ ensure_jq() {
     err "生成配置需要 jq。请安装 jq 后重试。"
     exit 1
   fi
-  if [ "$(id -u)" != "0" ]; then
-    err "安装 jq 需要 root。请使用: sudo $0"
+  if ! is_root; then
+    err "安装 jq 需要 root。请使用: sudo bash $SCRIPT_URL"
     exit 1
   fi
   if command -v apt-get &>/dev/null; then
@@ -91,7 +109,6 @@ ensure_jq() {
 # 设置全局变量：MODEL_ID, MODEL_NAME
 choose_preset_model() {
   local type="$1"
-  local custom_num
 
   echo ""
   case "$type" in
@@ -99,45 +116,33 @@ choose_preset_model() {
       echo "  请选择 Claude 模型："
       echo "    [1] claude-sonnet-4-6-20260218  Claude Sonnet 4.6（推荐）★"
       echo "    [2] 自定义模型 ID..."
-      custom_num=2
       ;;
     openai)
       echo "  请选择 OpenAI 模型："
       echo "    [1] gpt-5.4               GPT-5.4（推荐）★"
       echo "    [2] 自定义模型 ID..."
-      custom_num=2
       ;;
     gemini)
       echo "  请选择 Gemini 模型："
       echo "    [1] gemini-3-flash-preview  Gemini 3 Flash（推荐）★"
       echo "    [2] 自定义模型 ID..."
-      custom_num=2
       ;;
     minimax)
       echo "  请选择 MiniMax 模型："
       echo "    [1] minimax-m2.7         MiniMax M2.7（推荐）★"
       echo "    [2] 自定义模型 ID..."
-      custom_num=2
       ;;
   esac
   echo ""
 
   while true; do
-    if [ -t 0 ]; then
-      read -r -p "  请输入选项（回车默认 1）: " mchoice
-    else
-      read -r -p "  请输入选项（回车默认 1）: " mchoice </dev/tty
-    fi
+    read_input "  请输入选项（回车默认 1）: " mchoice
     mchoice="${mchoice:-1}"
 
-    if [ "$mchoice" = "$custom_num" ]; then
+    if [ "$mchoice" = "2" ]; then
       # 自定义输入
       while true; do
-        if [ -t 0 ]; then
-          read -r -p "  请输入自定义模型 ID: " custom_id
-        else
-          read -r -p "  请输入自定义模型 ID: " custom_id </dev/tty
-        fi
+        read_input "  请输入自定义模型 ID: " custom_id
         custom_id=$(echo "$custom_id" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
         if [ -n "$custom_id" ]; then
           MODEL_ID="$custom_id"
@@ -153,7 +158,51 @@ choose_preset_model() {
       openai-1) MODEL_ID="gpt-5.4";            MODEL_NAME="GPT-5.4";           return ;;
       gemini-1) MODEL_ID="gemini-3-flash-preview"; MODEL_NAME="Gemini 3 Flash"; return ;;
       minimax-1) MODEL_ID="minimax-m2.7";      MODEL_NAME="MiniMax M2.7";      return ;;
-      *) warn "请输入 1 到 $custom_num 之间的数字。" ;;
+      *) warn "请输入 1 或 2。" ;;
+    esac
+  done
+}
+
+# --- 选择接入节点 ---
+# 设置全局变量：APIPRO_BASE_URL, REGION_NAME
+choose_region() {
+  if [ -n "${APIPRO_REGION:-}" ]; then
+    case "$APIPRO_REGION" in
+      cn)
+        APIPRO_BASE_URL="https://api.wenwen-ai.com"
+        REGION_NAME="国内节点"
+        ;;
+      global)
+        APIPRO_BASE_URL="https://api.apipro.ai"
+        REGION_NAME="海外节点"
+        ;;
+      *)
+        err "未知节点: $APIPRO_REGION（支持 cn / global）"; exit 1 ;;
+    esac
+    return
+  fi
+
+  echo ""
+  echo "  请选择接入节点："
+  echo "    [1] 🇨🇳  国内节点  —  api.wenwen-ai.com  （中国大陆推荐）"
+  echo "    [2] 🌏  海外节点  —  api.apipro.ai       （境外服务器推荐）"
+  echo ""
+
+  while true; do
+    read_input "  请输入 1-2（回车默认选 1）: " rchoice
+    rchoice="${rchoice:-1}"
+    case "$rchoice" in
+      1)
+        APIPRO_BASE_URL="https://api.wenwen-ai.com"
+        REGION_NAME="国内节点"
+        break
+        ;;
+      2)
+        APIPRO_BASE_URL="https://api.apipro.ai"
+        REGION_NAME="海外节点"
+        break
+        ;;
+      *) warn "请输入 1 或 2。" ;;
     esac
   done
 }
@@ -176,11 +225,7 @@ choose_channel() {
   echo ""
 
   while true; do
-    if [ -t 0 ]; then
-      read -r -p "  请输入 1-2（回车默认选 1）: " cchoice
-    else
-      read -r -p "  请输入 1-2（回车默认选 1）: " cchoice </dev/tty
-    fi
+    read_input "  请输入 1-2（回车默认选 1）: " cchoice
     cchoice="${cchoice:-1}"
     case "$cchoice" in
       1) CHANNEL_TYPE=feishu;   break ;;
@@ -191,11 +236,11 @@ choose_channel() {
 }
 
 # --- 选择模型类型 ---
-# 设置全局变量：MODEL_TYPE, MODEL_ID, MODEL_NAME, PROVIDER_NAME, BASE_URL, API_TYPE
+# 设置全局变量：MODEL_TYPE, MODEL_ID, MODEL_NAME, PROVIDER_NAME
 choose_model() {
   # 支持环境变量预设跳过交互
-  if [ -n "${BREAKOUT_MODEL_TYPE:-}" ]; then
-    MODEL_TYPE="$BREAKOUT_MODEL_TYPE"
+  if [ -n "${APIPRO_MODEL_TYPE:-}" ]; then
+    MODEL_TYPE="$APIPRO_MODEL_TYPE"
   else
     echo ""
     echo "  请选择使用的模型类型："
@@ -205,11 +250,7 @@ choose_model() {
     echo "    [4] Claude 系列  — 原生 Anthropic 格式"
     echo ""
     while true; do
-      if [ -t 0 ]; then
-        read -r -p "请输入 1-4（直接回车默认选 1）: " choice
-      else
-        read -r -p "请输入 1-4（直接回车默认选 1）: " choice </dev/tty
-      fi
+      read_input "请输入 1-4（直接回车默认选 1）: " choice
       choice="${choice:-1}"
       case "$choice" in
         1) MODEL_TYPE=openai;  break ;;
@@ -223,24 +264,16 @@ choose_model() {
 
   case "$MODEL_TYPE" in
     claude)
-      PROVIDER_NAME="breakout-claude"
-      BASE_URL="https://breakout.wenwen-ai.com"
-      API_TYPE="anthropic-messages"
+      PROVIDER_NAME="apipro-claude"
       ;;
     openai)
-      PROVIDER_NAME="breakout-openai"
-      BASE_URL="https://breakout.wenwen-ai.com/v1"
-      API_TYPE="openai-completions"
+      PROVIDER_NAME="apipro-openai"
       ;;
     gemini)
-      PROVIDER_NAME="breakout-gemini"
-      BASE_URL="https://breakout.wenwen-ai.com/v1beta"
-      API_TYPE="google-generative-ai"
+      PROVIDER_NAME="apipro-gemini"
       ;;
     minimax)
-      PROVIDER_NAME="breakout-minimax"
-      BASE_URL="https://breakout.wenwen-ai.com/v1"
-      API_TYPE="openai-completions"
+      PROVIDER_NAME="apipro-minimax"
       ;;
     *)
       err "未知模型类型: $MODEL_TYPE"
@@ -249,9 +282,9 @@ choose_model() {
   esac
 
   # 支持环境变量预设模型 ID（跳过预设菜单）
-  if [ -n "${BREAKOUT_MODEL_ID:-}" ]; then
-    MODEL_ID="$BREAKOUT_MODEL_ID"
-    MODEL_NAME="${BREAKOUT_MODEL_NAME:-$MODEL_ID}"
+  if [ -n "${APIPRO_MODEL_ID:-}" ]; then
+    MODEL_ID="$APIPRO_MODEL_ID"
+    MODEL_NAME="${APIPRO_MODEL_NAME:-$MODEL_ID}"
   else
     choose_preset_model "$MODEL_TYPE"
   fi
@@ -262,13 +295,18 @@ choose_model() {
 # --- 生成 openclaw.json ---
 write_openclaw_config() {
   local data_dir="$1"
-  local breakout_key="$2"
+  local apipro_key="$2"
   local channel_type="$3"
   local feishu_app_id="$4"
   local feishu_app_secret="$5"
   local telegram_token="$6"
+  local base_url="$7"
+  local provider_name="$8"
+  local model_id="$9"
   local gateway_token
-  gateway_token=$(openssl rand -hex 16 2>/dev/null || echo "fallback-$(date +%s)-$$")
+  gateway_token=$(openssl rand -hex 16 2>/dev/null \
+    || head -c 16 /dev/urandom 2>/dev/null | od -A n -t x1 | tr -d ' \n' \
+    || echo "fallback-$(date +%s)-$$")
 
   mkdir -p "$data_dir/workspace"
   local cfg_path="$data_dir/openclaw.json"
@@ -303,46 +341,51 @@ write_openclaw_config() {
       }')
   fi
 
+  local installed_ver
+  installed_ver=$(openclaw --version 2>/dev/null || echo "unknown")
+
   # 使用 jq 安全生成完整 JSON（避免 token 中的特殊字符问题）
-  # 所有 4 个 provider 均写入配置，用同一个 Breakout API Key
+  # 所有 4 个 provider 均写入配置，用同一个 APIPro API Key
   jq -n \
-    --arg apikey "$breakout_key" \
+    --arg apikey "$apipro_key" \
     --argjson channels "$channels_json" \
     --arg gw "$gateway_token" \
     --arg workspace "$data_dir/workspace" \
     --argjson port "$OPENCLAW_PORT" \
-    --arg defaultModel "$PROVIDER_NAME/$MODEL_ID" \
+    --arg defaultModel "$provider_name/$model_id" \
+    --arg baseUrl "$base_url" \
+    --arg version "$installed_ver" \
     '{
-      meta: { lastTouchedVersion: "2026.2.3-1", lastTouchedAt: (now | todate) },
+      meta: { lastTouchedVersion: $version, lastTouchedAt: (now | todate) },
       models: {
         mode: "merge",
         providers: {
-          "breakout-openai": {
-            baseUrl: "https://breakout.wenwen-ai.com/v1",
+          "apipro-openai": {
+            baseUrl: "\($baseUrl)/v1",
             apiKey: $apikey,
             api: "openai-completions",
             models: [
               { id: "gpt-5.4", name: "GPT-5.4", reasoning: false, input: ["text", "image"], contextWindow: 200000, maxTokens: 8192 }
             ]
           },
-          "breakout-minimax": {
-            baseUrl: "https://breakout.wenwen-ai.com/v1",
+          "apipro-minimax": {
+            baseUrl: "\($baseUrl)/v1",
             apiKey: $apikey,
             api: "openai-completions",
             models: [
               { id: "minimax-m2.7", name: "MiniMax M2.7", reasoning: false, input: ["text", "image"], contextWindow: 200000, maxTokens: 8192 }
             ]
           },
-          "breakout-gemini": {
-            baseUrl: "https://breakout.wenwen-ai.com/v1beta",
+          "apipro-gemini": {
+            baseUrl: "\($baseUrl)/v1beta",
             apiKey: $apikey,
             api: "google-generative-ai",
             models: [
               { id: "gemini-3-flash-preview", name: "Gemini 3 Flash", reasoning: false, input: ["text", "image"], contextWindow: 200000, maxTokens: 8192 }
             ]
           },
-          "breakout-claude": {
-            baseUrl: "https://breakout.wenwen-ai.com",
+          "apipro-claude": {
+            baseUrl: $baseUrl,
             apiKey: $apikey,
             api: "anthropic-messages",
             models: [
@@ -392,8 +435,8 @@ ensure_node() {
     exit 1
   fi
 
-  if [ "$(id -u)" != "0" ]; then
-    err "安装 Node.js 需要 root。请使用: sudo $0"
+  if ! is_root; then
+    err "安装 Node.js 需要 root。请使用: sudo bash $SCRIPT_URL"
     exit 1
   fi
 
@@ -432,7 +475,7 @@ ensure_openclaw() {
   local npm_global
   local current_ver
   npm_global=$(npm root -g 2>/dev/null | sed 's|/node_modules$|/bin|') || true
-  [ -n "$npm_global" ] && export PATH="$npm_global:$PATH"
+  [[ -n "$npm_global" && ":$PATH:" != *":$npm_global:"* ]] && export PATH="$npm_global:$PATH"
 
   # 默认优先复用已安装版本，避免上游 latest 失效时影响重复执行
   if command -v openclaw &>/dev/null; then
@@ -447,16 +490,16 @@ ensure_openclaw() {
     info "正在安装 openclaw ($OPENCLAW_NPM_SPEC)..."
   fi
 
-  if ! npm install -g "$OPENCLAW_NPM_SPEC" --prefer-offline; then
+  if ! npm install -g "$OPENCLAW_NPM_SPEC"; then
     err "openclaw 安装失败：$OPENCLAW_NPM_SPEC"
     err "上游 latest 版本偶尔会因为依赖发布异常导致 ETARGET。"
     err "可改用已验证版本，例如：OPENCLAW_NPM_SPEC=openclaw@2026.3.13 sudo ./deploy.sh"
     exit 1
   fi
 
-  # 再次刷新路径
+  # 再次刷新路径（仅在尚未加入时追加，避免 PATH 重复）
   npm_global=$(npm root -g 2>/dev/null | sed 's|/node_modules$|/bin|') || true
-  [ -n "$npm_global" ] && export PATH="$npm_global:$PATH"
+  [[ -n "$npm_global" && ":$PATH:" != *":$npm_global:"* ]] && export PATH="$npm_global:$PATH"
 
   if ! command -v openclaw &>/dev/null; then
     err "openclaw 安装失败，请手动执行: npm install -g $OPENCLAW_NPM_SPEC"
@@ -473,6 +516,8 @@ run_node() {
   sleep 1
 
   info "正在启动 OpenClaw Gateway (端口 $OPENCLAW_PORT)..."
+  # 清空旧日志，避免 grep "listening on" 匹配上一次运行的记录
+  : > "${OPENCLAW_DATA_DIR}/gateway.log"
   # 用 HOME 显式传递，确保后台进程能找到 ~/.openclaw/openclaw.json
   nohup bash -c "HOME=\"$HOME\" openclaw gateway --port \"$OPENCLAW_PORT\"" \
     >> "${OPENCLAW_DATA_DIR}/gateway.log" 2>&1 &
@@ -483,6 +528,7 @@ run_node() {
   printf "${green}[INFO]${nc} 连接中"
   local i=0
   local started=0
+  local crashed=0
   while [ $i -lt 60 ]; do
     sleep 1
     i=$((i+1))
@@ -491,11 +537,17 @@ run_node() {
       started=1
       break
     fi
+    if ! kill -0 "$pid" 2>/dev/null; then
+      crashed=1
+      break
+    fi
   done
   echo ""  # 换行
 
   if [ $started -eq 1 ]; then
     info "Gateway 已成功启动 ✓  (PID: $pid)"
+  elif [ $crashed -eq 1 ]; then
+    warn "Gateway 进程已意外退出，请检查日志: ${OPENCLAW_DATA_DIR}/gateway.log"
   elif kill -0 "$pid" 2>/dev/null; then
     info "Gateway 进程运行中（PID: $pid），正在初始化，稍后即可使用"
     info "查看连接状态: tail -f ${OPENCLAW_DATA_DIR}/gateway.log"
@@ -507,15 +559,18 @@ run_node() {
 # --- 主流程 ---
 main() {
   echo ""
-  echo "=============================================="
-  echo "  OpenClaw 一键部署（Breakout 版）"
-  echo "=============================================="
+  echo "╔══════════════════════════════════════════════════════════╗"
+  echo "║                                                          ║"
+  echo "║          OpenClaw Gateway  ·  by APIPro Team            ║"
+  echo "║             智能 AI 网关  ·  一键部署工具                ║"
+  echo "║                                                          ║"
+  echo "╚══════════════════════════════════════════════════════════╝"
   echo ""
 
   # 数据目录
   if [ ! -d "$OPENCLAW_DATA_DIR" ]; then
-    if need_sudo; then
-      err "创建 $OPENCLAW_DATA_DIR 需要 root。请使用: sudo $0"
+    if ! is_root; then
+      err "创建 $OPENCLAW_DATA_DIR 需要 root。请使用: sudo bash $SCRIPT_URL"
       exit 1
     fi
     mkdir -p "$OPENCLAW_DATA_DIR"
@@ -527,14 +582,13 @@ main() {
   ensure_openclaw
 
   # --- 第二步：收集配置 ---
-  BREAKOUT_API_KEY="${BREAKOUT_API_KEY:-}"
-  FEISHU_APP_ID="${FEISHU_APP_ID:-}"
-  FEISHU_APP_SECRET="${FEISHU_APP_SECRET:-}"
-  TELEGRAM_BOT_TOKEN="${TELEGRAM_BOT_TOKEN:-}"
+  # 选择接入节点
+  choose_region
+  info "接入节点: $REGION_NAME  ($APIPRO_BASE_URL)"
 
   echo ""
-  info "请在 Breakout 获取 API Key: https://breakout.wenwen-ai.com"
-  BREAKOUT_API_KEY=$(read_token "Breakout API Key" "BREAKOUT_API_KEY" "请输入 Breakout API Token: ")
+  info "请在控制台获取 API Key: $APIPRO_BASE_URL"
+  APIPRO_API_KEY=$(read_token "APIPRO_API_KEY" "请输入 API Key: ")
 
   # 选择消息渠道
   choose_channel
@@ -543,37 +597,38 @@ main() {
     echo ""
     info "请在飞书开放平台创建企业自建应用并获取凭据"
     info "地址：https://open.feishu.cn/app"
-    FEISHU_APP_ID=$(read_token "飞书 App ID" "FEISHU_APP_ID" "请输入飞书 App ID（格式 cli_xxxx）: ")
-    FEISHU_APP_SECRET=$(read_token "飞书 App Secret" "FEISHU_APP_SECRET" "请输入飞书 App Secret: ")
+    FEISHU_APP_ID=$(read_token "FEISHU_APP_ID" "请输入飞书 App ID（格式 cli_xxxx）: ")
+    FEISHU_APP_SECRET=$(read_token "FEISHU_APP_SECRET" "请输入飞书 App Secret: ")
   else
     echo ""
     info "请在 Telegram @BotFather 创建 Bot 并获取 Token"
-    TELEGRAM_BOT_TOKEN=$(read_token "Telegram Bot Token" "TELEGRAM_BOT_TOKEN" "请输入 Telegram Bot Token: ")
+    TELEGRAM_BOT_TOKEN=$(read_token "TELEGRAM_BOT_TOKEN" "请输入 Telegram Bot Token: ")
   fi
 
   # 选择模型类型
   choose_model
 
   # --- 第三步：写入配置并启动 ---
-  write_openclaw_config "$OPENCLAW_DATA_DIR" "$BREAKOUT_API_KEY" "$CHANNEL_TYPE" "$FEISHU_APP_ID" "$FEISHU_APP_SECRET" "$TELEGRAM_BOT_TOKEN"
+  write_openclaw_config "$OPENCLAW_DATA_DIR" "$APIPRO_API_KEY" "$CHANNEL_TYPE" "$FEISHU_APP_ID" "$FEISHU_APP_SECRET" "$TELEGRAM_BOT_TOKEN" "$APIPRO_BASE_URL" "$PROVIDER_NAME" "$MODEL_ID"
   run_node
 
   echo ""
-  echo "=============================================="
-  echo -e "  ${green}部署完成${nc}"
-  echo "=============================================="
-  echo "  - 渠道: $CHANNEL_TYPE"
-  echo "  - 模型: $MODEL_NAME ($MODEL_TYPE 格式，via Breakout)"
-  echo "  - 网关: http://127.0.0.1:$OPENCLAW_PORT"
-  echo "  - 配置: $OPENCLAW_DATA_DIR/openclaw.json"
+  echo "╔══════════════════════════════════════════════════════════╗"
+  echo -e "║            ${green}部署成功  ✓   Gateway 运行中${nc}                ║"
+  echo "╚══════════════════════════════════════════════════════════╝"
   echo ""
-  echo "  OpenClaw Gateway 正在运行中"
+  echo "  节点  : $REGION_NAME  ($APIPRO_BASE_URL)"
+  echo "  渠道  : $CHANNEL_TYPE"
+  echo "  模型  : $MODEL_NAME  ($MODEL_TYPE 格式)"
+  echo "  网关  : http://127.0.0.1:$OPENCLAW_PORT"
+  echo "  配置  : $OPENCLAW_DATA_DIR/openclaw.json"
+  echo ""
   if [ "$CHANNEL_TYPE" = "feishu" ]; then
-    echo "  在飞书中将机器人添加到会话，发送消息即可开始使用"
+    echo "  → 在飞书中将机器人添加到会话，发送消息即可开始使用"
   else
-    echo "  在 Telegram 向你的 Bot 发送 /start 即可开始使用"
+    echo "  → 在 Telegram 向你的 Bot 发送 /start 即可开始使用"
   fi
-  echo "  查看日志: tail -f $OPENCLAW_DATA_DIR/gateway.log"
+  echo "  → 查看日志: tail -f $OPENCLAW_DATA_DIR/gateway.log"
   echo ""
 }
 
